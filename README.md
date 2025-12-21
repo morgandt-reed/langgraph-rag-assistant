@@ -24,22 +24,91 @@ Enterprise-ready Retrieval Augmented Generation (RAG) system with LangGraph mult
 
 ## Architecture
 
-```mermaid
-graph TD
-    User[User Query] --> QA[Query Analysis Node]
-    QA --> |needs context| Ret[Retrieval Node]
-    QA --> |clarification needed| Clarify[Clarification Node]
-    Ret --> RC[Relevance Check Node]
-    RC --> |relevant docs found| Gen[Generation Node]
-    RC --> |insufficient context| Fallback[Fallback Response]
-    Gen --> SA[Source Attribution Node]
-    SA --> Response[Final Response]
-    Fallback --> Response
+### LangGraph State Machine
 
-    style QA fill:#e1f5ff
-    style Ret fill:#ffe1f5
-    style Gen fill:#e1ffe1
-    style SA fill:#fff5e1
+```mermaid
+stateDiagram-v2
+    [*] --> QueryAnalysis: User Query
+    QueryAnalysis --> Retrieval: needs_context
+    QueryAnalysis --> Clarification: needs_clarification
+    Clarification --> QueryAnalysis: clarified
+    Retrieval --> RelevanceCheck: documents_retrieved
+    RelevanceCheck --> Generation: relevant_docs_found
+    RelevanceCheck --> Fallback: insufficient_context
+    Generation --> SourceAttribution: answer_generated
+    SourceAttribution --> [*]: Final Response
+    Fallback --> [*]: Fallback Response
+```
+
+### System Architecture
+
+```mermaid
+flowchart TB
+    subgraph Client Layer
+        API[FastAPI<br/>Port: 8000]
+    end
+
+    subgraph LangGraph Engine
+        direction TB
+        WF[Workflow Orchestrator]
+        subgraph Nodes
+            QA[Query Analysis]
+            RET[Retrieval]
+            RC[Relevance Check]
+            GEN[Generation]
+            SA[Source Attribution]
+        end
+    end
+
+    subgraph AI Services
+        LLM[OpenAI GPT-4<br/>Generation + Analysis]
+        EMB[text-embedding-ada-002<br/>Embeddings]
+    end
+
+    subgraph Storage
+        VDB[(ChromaDB<br/>Vector Store)]
+        MEM[(Conversation<br/>Memory)]
+    end
+
+    API --> WF
+    WF --> QA
+    QA --> RET
+    RET --> RC
+    RC --> GEN
+    GEN --> SA
+
+    RET --> VDB
+    GEN --> LLM
+    RET --> EMB
+    QA --> MEM
+
+    style API fill:#009688,color:#fff
+    style LLM fill:#10a37f,color:#fff
+    style VDB fill:#FF6B6B,color:#fff
+    style WF fill:#7B68EE,color:#fff
+```
+
+### RAG Pipeline Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as API
+    participant W as LangGraph
+    participant V as ChromaDB
+    participant L as GPT-4
+
+    U->>A: POST /query
+    A->>W: invoke(question)
+    W->>W: Query Analysis
+    W->>V: Hybrid Search (semantic + BM25)
+    V-->>W: Top-K Documents
+    W->>W: Relevance Check (score > 0.7)
+    W->>L: Generate Answer + Context
+    L-->>W: Response
+    W->>W: Source Attribution
+    W-->>A: Answer + Sources + Confidence
+    A-->>U: JSON Response
 ```
 
 ## Features
